@@ -1,0 +1,9 @@
+vectorbt
+numpy
+pandas
+scipy
+numba
+matplotlib
+plotly
+yfinance
+pytest
