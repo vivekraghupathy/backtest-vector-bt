@@ -1,0 +1,25 @@
+{
+    "strategy": {
+        "momentum_lookback_days": 63,
+        "portfolio_size": 10,
+        "entry_rank": 10,
+        "exit_rank": 20,
+        "drawdown_limit": 0.20
+    },
+    "market_regime": {
+        "benchmark_ticker": "^CRSLDX",
+        "benchmark_dma_window": 200
+    },
+    "capital": {
+        "allocation_per_slot": 25000,
+        "rebalance_frequency": "W-FRI",
+        "live_data_lookback_days": 350
+    },
+    "paths": {
+        "symbols_file": "REF_DATA\\symbols.csv",
+        "holdings_file": "current_holdings.csv",
+        "journal_file": "trading_journal.csv",
+        "history_file": "holdings_history.csv",
+        "cache_file": "historical_prices.parquet"
+    }
+}
