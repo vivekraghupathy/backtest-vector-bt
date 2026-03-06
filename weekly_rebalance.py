@@ -60,7 +60,7 @@ def snapshot_holdings(date_str, holdings, prices, filepath='holdings_history.csv
 # ==========================================
 # MAIN EXECUTION
 # ==========================================
-def generate_weekly_signals(allocation_per_slot=100000):
+def generate_weekly_signals(allocation_per_slot=100000,force_refresh=False):
 
     # 🔴 1. LOAD CONFIGURATION
     cfg = ConfigLoader('config.json')
@@ -71,6 +71,8 @@ def generate_weekly_signals(allocation_per_slot=100000):
 
     run_date = datetime.now().strftime('%Y-%m-%d')
     print(f"--- Generating Live Signals for {run_date} ---")
+    if not force_refresh:
+        print("!!!WARNING!!! Using cached data rebalance may be inaccurate.")
     
     try:
         symbols_df = pd.read_csv(paths['symbols_file'])
@@ -85,8 +87,10 @@ def generate_weekly_signals(allocation_per_slot=100000):
     end_date = datetime.now()
     start_date = end_date - timedelta(days=cap_cfg['live_data_lookback_days'])
     
-    data_mgr = DataManager(universe, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
-    prices = data_mgr.fetch_data(force_refresh=True)
+    data_mgr = DataManager(universe, 
+                           start_date.strftime('%Y-%m-%d'), 
+                           end_date.strftime('%Y-%m-%d'))
+    prices = data_mgr.fetch_data(force_refresh=force_refresh)
     momentum_df = data_mgr.calculate_momentum(lookback_days=strat_cfg['momentum_lookback_days'])
     rolling_highs_df = data_mgr.calculate_rolling_high(lookback_days=strat_cfg['momentum_lookback_days'])
 
@@ -114,7 +118,8 @@ def generate_weekly_signals(allocation_per_slot=100000):
         portfolio_size=strat_cfg['portfolio_size'],
         entry_rank=strat_cfg['entry_rank'],
         exit_rank=strat_cfg['exit_rank'],
-        drawdown_limit=strat_cfg['drawdown_limit']
+        drawdown_limit=strat_cfg['drawdown_limit'],
+        verbose=True
     )
     
     target_portfolio = strategy.get_target_portfolio(latest_momentum,
@@ -180,7 +185,8 @@ def generate_weekly_signals(allocation_per_slot=100000):
          new_positions[ticker] = shares
          
     print("="*50)
-    
+    if not force_refresh:
+        print("!!!WARNING!!! Using cached data rebalance may be inaccurate.")
     # --- CONFIRMATION & LOGGING ---
     if buys or sells:
         print("\n⚠️ WARNING: Only proceed if you have successfully placed all orders in your broker account.")
@@ -189,13 +195,11 @@ def generate_weekly_signals(allocation_per_slot=100000):
         if confirmation == 'y':
             save_new_positions(new_positions)
             append_to_journal(executed_trades)
-            snapshot_holdings(run_date, new_positions, latest_prices)
+            # snapshot_holdings(run_date, new_positions, latest_prices)
         else:
             print("\n❌ CANCELED: Logs were NOT updated.")
     else:
         print("\n✅ No trades required today.")
-        # Even if no trades occur, we still want to log the snapshot of our holdings for this week
-        snapshot_holdings(run_date, new_positions, latest_prices)
 
 if __name__ == "__main__":
-    generate_weekly_signals(allocation_per_slot=25000)
+    generate_weekly_signals(allocation_per_slot=25000, force_refresh=False)

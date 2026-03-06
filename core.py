@@ -3,6 +3,8 @@ import yfinance as yf
 import pandas as pd
 import json
 import os
+from tqdm import tqdm
+from datetime import datetime, timedelta
 
 class ConfigLoader:
     def __init__(self, config_path='config.json'):
@@ -38,8 +40,11 @@ class DataManager:
     def fetch_benchmark(self, ticker='^CRSLDX'):
         """Fetches the broader market index for regime filtering."""
         print(f"Fetching benchmark data for {ticker}...")
+        date_obj = datetime.strptime(self.start_date, "%Y-%m-%d")
+        start_date = date_obj - timedelta(days=200)  # Fetch more data for DMA calculation
+
         try:
-            bench_df = yf.download(ticker, start=self.start_date, end=self.end_date, progress=False)
+            bench_df = yf.download(ticker, start=start_date, end=self.end_date, progress=False)
             
             if isinstance(bench_df.columns, pd.MultiIndex):
                 col = 'Adj Close' if 'Adj Close' in bench_df.columns.levels[0] else 'Close'
@@ -76,7 +81,7 @@ class DataManager:
         print(f"Fetching data from yfinance for {len(self.tickers)} tickers...")
         price_series = {}
         
-        for ticker in self.tickers:
+        for ticker in tqdm(self.tickers, desc="Fetching data"):
             try:
                 df = yf.download(ticker, start=self.start_date, end=self.end_date, progress=False)
                 if df.empty:
@@ -123,43 +128,58 @@ class DataManager:
 
 # 2. The Strategy Class
 class MomentumStrategy:
-    def __init__(self, portfolio_size=10, entry_rank=10, exit_rank=20, drawdown_limit=0.20):
+    def __init__(self, portfolio_size=10, entry_rank=10, exit_rank=20, drawdown_limit=0.20, verbose=False):
         self.portfolio_size = portfolio_size
         self.entry_rank = entry_rank
         self.exit_rank = exit_rank
-        
         # Defines the maximum allowed drop from the recent high (20%)
-        self.drawdown_limit = drawdown_limit 
+        self.drawdown_limit = drawdown_limit
+        self.verbose = verbose 
 
-    def get_target_portfolio(self, momentum_row, current_holdings, current_prices, current_highs, market_bullish=True):
+    def get_target_portfolio(self, 
+                             momentum_row, 
+                             current_holdings, 
+                             current_prices, 
+                             current_highs, 
+                             market_bullish=True):
+        # 1. Align data and drop NaNs
         valid_scores = momentum_row.dropna()
-        ranked_tickers = valid_scores.sort_values(ascending=False).index.tolist()
+        
+        # Align prices and highs to match the valid valid_scores index
+        prices_aligned = current_prices.reindex(valid_scores.index)
+        highs_aligned = current_highs.reindex(valid_scores.index)
+        
+        # 2. PRE-FILTER: Create a mask for stocks that are strictly ABOVE the drawdown limit
+        # This mathematically strips out the "beaten down" stocks before ranking
+        drawdown_mask = prices_aligned > (highs_aligned * (1 - self.drawdown_limit))
+        
+        # Apply the mask to get only qualified, high-standing stocks
+        qualified_scores = valid_scores[drawdown_mask]
+        
+        if self.verbose:
+            print("\nMomentum Scores top 20:")
+            print(qualified_scores.sort_values(ascending=False)[:20])
+        
+        # 3. RANKING: Rank only the qualified stocks
+        ranked_tickers = qualified_scores.sort_values(ascending=False).index.tolist()
         
         top_20_pool = set(ranked_tickers[:self.exit_rank])
         top_10_pool = ranked_tickers[:self.entry_rank]
         
         target_portfolio = []
         
-        # 1. EXIT RULE: (Always runs) Keep if in Top 20 AND drop is < 20%
+        # 4. EXIT RULE: (Always runs) Keep if in Top 20. 
         for ticker in current_holdings:
             if ticker in top_20_pool:
-                price = current_prices.get(ticker, 0)
-                recent_high = current_highs.get(ticker, 0)
-                
-                if price > recent_high * (1 - self.drawdown_limit):
-                    target_portfolio.append(ticker)
+                target_portfolio.append(ticker)
         
-        # 2. ENTRY RULE: (Only runs if market is > 200 DMA)
+        # 5. ENTRY RULE: (Only runs if market is > 200 DMA)
         if market_bullish:
             for ticker in top_10_pool:
                 if len(target_portfolio) >= self.portfolio_size:
                     break
                     
                 if ticker not in target_portfolio:
-                    price = current_prices.get(ticker, 0)
-                    recent_high = current_highs.get(ticker, 0)
-                    
-                    if price > recent_high * (1 - self.drawdown_limit):
-                        target_portfolio.append(ticker)
+                    target_portfolio.append(ticker)
                     
         return target_portfolio

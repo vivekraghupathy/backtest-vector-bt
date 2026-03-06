@@ -2,7 +2,7 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import math
-from core import DataManager, MomentumStrategy
+from core import DataManager, MomentumStrategy, ConfigLoader
 
 class SimplePortfolio:
     def __init__(self, allocation_per_slot=100000):
@@ -144,19 +144,33 @@ def print_run_summary(results_df, total_trades, initial_capital):
 
 def run_backtest():
     # Define a universe 
-    csv_file = 'REF_DATA\symbols.csv'
-    symbols_df = pd.read_csv(csv_file)
-    universe = [f"{str(sym).strip()}.NS" for sym in symbols_df['Symbol'].tolist()]
-    start_date = '2023-01-01'
-    end_date = '2026-02-28' 
-    capital_per_slot = 25000   
     print("--- Starting Backtest Engine ---")
+    
+    # 1. Load Configuration
+    cfg = ConfigLoader('config.json')
+    strat_cfg = cfg.get_strategy_params()
+    regime_cfg = cfg.get_regime_params()
+    cap_cfg = cfg.get_capital_params()
+    paths = cfg.get_paths()
+    
+    # Load Universe
+    try:
+        symbols_df = pd.read_csv(paths['symbols_file'])
+        universe = [f"{str(sym).strip()}.NS" for sym in symbols_df['Symbol'].tolist()]
+    except FileNotFoundError:
+        print(f"❌ ERROR: '{paths['symbols_file']}' not found.")
+        return
     
     # Initialize components
     # universe = universe[:100]  # Limit to top 100 tickers for faster backtest runs
-    data_mgr = DataManager(universe, start_date, end_date)
-    strategy = MomentumStrategy(portfolio_size=10, entry_rank=10, exit_rank=20,drawdown_limit=0.20)
-    portfolio = SimplePortfolio(allocation_per_slot=capital_per_slot) # 10 Lakh total capital
+    data_mgr = DataManager(universe, '2024-01-01', '2026-02-28', cache_filename=paths['cache_file'])
+    strategy = MomentumStrategy(
+        portfolio_size=strat_cfg['portfolio_size'],
+        entry_rank=strat_cfg['entry_rank'],
+        exit_rank=strat_cfg['exit_rank'],
+        drawdown_limit=strat_cfg['drawdown_limit']
+    )
+    portfolio = SimplePortfolio(allocation_per_slot=cap_cfg['allocation_per_slot'])
     
     # Prepare Data
     prices = data_mgr.fetch_data(force_refresh=False)
@@ -178,6 +192,7 @@ def run_backtest():
         latest_bench_price = bench_prices.loc[:date].iloc[-1]
         latest_bench_dma = bench_200_dma.loc[:date].iloc[-1]
         is_bull_market = latest_bench_price > latest_bench_dma
+
         current_holdings = list(portfolio.positions.keys())  
         # 1. Strategy decides what to hold
         target_portfolio = strategy.get_target_portfolio(

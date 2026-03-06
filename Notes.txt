@@ -21,13 +21,27 @@ Max Loss (DD)     : -27.81%
 ========================================
 Test#3 - Entry - Top10, Exit - Top20, Lookback - 63, SL - 25% from high, regime filter
 ----------------------------------------
-Total Gain        : 25.89%
-Max Gain (Peak)   : 41.23%
-Max Loss (DD)     : -21.36%
+Total Gain        : 21.96%
+Max Gain (Peak)   : 38.71%
+Max Loss (DD)     : -22.77%
 ========================================
 Test#3 - Entry - Top10, Exit - Top20, Lookback - 63, SL - 20% from high, regime filter
 ----------------------------------------
-Total Gain        : 26.92%
-Max Gain (Peak)   : 39.26%
-Max Loss (DD)     : -20.39%
+Total Gain        : 29.01%
+Max Gain (Peak)   : 38.79%
+Max Loss (DD)     : -19.59%
+========================================
+========================================
+Test#3 - Entry - Top10, Exit - Top20, Lookback - 63, SL - 15% from high, regime filter
+----------------------------------------
+Total Gain        : 40.43%
+Max Gain (Peak)   : 40.43%
+Max Loss (DD)     : -13.04%
+========================================
+========================================
+Test#3 - Entry - Top10, Exit - Top20, Lookback - 63, SL - 10% from high, regime filter
+----------------------------------------
+Total Gain        : 35.23%
+Max Gain (Peak)   : 35.47%
+Max Loss (DD)     : -15.02%
 ========================================
