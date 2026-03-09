@@ -4,11 +4,11 @@
         "portfolio_size": 10,
         "entry_rank": 10,
         "exit_rank": 20,
-        "drawdown_limit": 0.15
+        "drawdown_limit": 0.1
     },
     "market_regime": {
         "benchmark_ticker": "^CRSLDX",
-        "benchmark_dma_window": 200
+        "benchmark_dma_window": 150
     },
     "capital": {
         "allocation_per_slot": 25000,
@@ -20,6 +20,15 @@
         "holdings_file": "current_holdings.csv",
         "journal_file": "trading_journal.csv",
         "history_file": "holdings_history.csv",
-        "cache_file": "historical_prices.parquet"
+        "cache_file": "historical_prices.parquet",
+        "master_data_file": "nifty500_master_10yr.parquet"
+    },
+    "data_pipeline": {
+        "master_end_date": "2025-12-31",
+        "master_history_years": 10
+    },
+    "backtest": {
+        "start_date": "2019-01-01",
+        "end_date": "2026-01-01"
     }
 }

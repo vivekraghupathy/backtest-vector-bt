@@ -28,35 +28,47 @@ class ConfigLoader:
         
     def get_paths(self):
         return self.config.get("paths", {})
+
+    def get_data_pipeline_params(self):
+        return self.config.get("data_pipeline", {})
+    
+    def get_backtest_params(self):
+        return self.config.get("backtest", {})
     
 class DataManager:
-    def __init__(self, tickers, start_date, end_date, cache_filename='historical_prices.parquet'):
+    def __init__(self, 
+                 tickers, 
+                 start_date, 
+                 end_date, 
+                 cache_filename='nifty500_master_10yr.parquet', 
+                 live_mode=False):
         self.tickers = tickers
         self.start_date = start_date
         self.end_date = end_date
         self.cache_filename = cache_filename
+        self.live_mode = live_mode  
         self.prices = None
+        self.benchmark_prices = None
 
-    def fetch_benchmark(self, ticker='^CRSLDX'):
-        """Fetches the broader market index for regime filtering."""
-        print(f"Fetching benchmark data for {ticker}...")
-        date_obj = datetime.strptime(self.start_date, "%Y-%m-%d")
-        start_date = date_obj - timedelta(days=200)  # Fetch more data for DMA calculation
-
-        try:
-            bench_df = yf.download(ticker, start=start_date, end=self.end_date, progress=False)
-            
-            if isinstance(bench_df.columns, pd.MultiIndex):
-                col = 'Adj Close' if 'Adj Close' in bench_df.columns.levels[0] else 'Close'
-                self.benchmark_prices = bench_df[col].iloc[:, 0]
-            else:
-                col = 'Adj Close' if 'Adj Close' in bench_df.columns else 'Close'
-                self.benchmark_prices = bench_df[col]
-                
+    def fetch_benchmark(self, benchmark_ticker):
+        if self.live_mode:
+            print(f"📡 [LIVE MODE] Fetching real-time benchmark {benchmark_ticker}...")
+            df = yf.download(benchmark_ticker, start=self.start_date, end=self.end_date, progress=False)
+            print(f"Latest Date for Benchmark: {df.index[-1].strftime('%Y-%m-%d')}")
+            col = 'Adj Close' if ('Adj Close' in df.columns or (isinstance(df.columns, pd.MultiIndex) and 'Adj Close' in df.columns.levels[0])) else 'Close'
+            self.benchmark_prices = df[col].iloc[:, 0] if isinstance(df.columns, pd.MultiIndex) else df[col]
             self.benchmark_prices = self.benchmark_prices.ffill()
             return self.benchmark_prices
-        except Exception as e:
-            print(f"Warning: Could not fetch benchmark {ticker}. Error: {e}")
+            
+        else:
+            if not os.path.exists(self.cache_filename): return None
+            master_df = pd.read_parquet(self.cache_filename)
+            master_df.index = pd.to_datetime(master_df.index)
+            sliced_df = master_df.loc[pd.to_datetime(self.start_date):pd.to_datetime(self.end_date)]
+            
+            if benchmark_ticker in sliced_df.columns:
+                self.benchmark_prices = sliced_df[benchmark_ticker]
+                return self.benchmark_prices
             return None
 
     def calculate_benchmark_dma(self, window=200):
@@ -65,53 +77,43 @@ class DataManager:
             return self.benchmark_prices.rolling(window=window).mean()
         return None
     
-    def fetch_data(self, force_refresh=False):
-        """
-        Loads data from a local cache if available. 
-        If not, fetches from yfinance and saves it to the cache.
-        """
-        # 1. Check local cache first
-        if os.path.exists(self.cache_filename) and not force_refresh:
-            print(f"Loading data from local cache: [{self.cache_filename}]...")
-            self.prices = pd.read_parquet(self.cache_filename)
-            print(f"Loaded {len(self.prices.columns)} tickers from cache.")
+    def fetch_data(self):
+        # ==========================================
+        # LIVE MODE: Fetch fresh data from internet
+        # ==========================================
+        if self.live_mode:
+            print(f"📡 [LIVE MODE] Fetching real-time data from yfinance...")
+            df = yf.download(self.tickers, start=self.start_date, end=self.end_date, progress=False)
+            
+            if isinstance(df.columns, pd.MultiIndex):
+                col = 'Adj Close' if 'Adj Close' in df.columns.levels[0] else 'Close'
+                self.prices = df[col]
+            else:
+                col = 'Adj Close' if 'Adj Close' in df.columns else 'Close'
+                self.prices = df[[col]]
+                
+            self.prices = self.prices.ffill().dropna(axis=1, how='all')
             return self.prices
 
-        # 2. Fetch from yfinance if cache doesn't exist or refresh is forced
-        print(f"Fetching data from yfinance for {len(self.tickers)} tickers...")
-        price_series = {}
-        
-        for ticker in tqdm(self.tickers, desc="Fetching data"):
-            try:
-                df = yf.download(ticker, start=self.start_date, end=self.end_date, progress=False)
-                if df.empty:
-                    continue
+        # ==========================================
+        # BACKTEST MODE: Slice from local database
+        # ==========================================
+        else:
+            if not os.path.exists(self.cache_filename):
+                raise FileNotFoundError(f"Master database '{self.cache_filename}' missing. Run ETL script first.")
                 
-                # Handle both MultiIndex and Flat columns
-                if isinstance(df.columns, pd.MultiIndex):
-                    if 'Adj Close' in df.columns.levels[0]:
-                        price_series[ticker] = df['Adj Close'].iloc[:, 0]
-                    else:
-                        price_series[ticker] = df['Close'].iloc[:, 0]
-                else:
-                    if 'Adj Close' in df.columns:
-                        price_series[ticker] = df['Adj Close']
-                    else:
-                        price_series[ticker] = df['Close']
-            except Exception:
-                pass
-
-        if not price_series:
-            raise ValueError("All ticker downloads failed.")
+            print(f"🗄️ [BACKTEST MODE] Slicing data from {self.cache_filename}...")
+            master_df = pd.read_parquet(self.cache_filename)
+            master_df.index = pd.to_datetime(master_df.index)
             
-        # Clean the final DataFrame
-        self.prices = pd.DataFrame(price_series).ffill().dropna(axis=1, how='all')
-        
-        # 3. Save to local cache for future runs
-        print(f"Saving fetched data to local cache: [{self.cache_filename}]...")
-        self.prices.to_parquet(self.cache_filename)
-        
-        return self.prices
+            start_ts = pd.to_datetime(self.start_date)
+            end_ts = pd.to_datetime(self.end_date)
+            
+            sliced_df = master_df.loc[start_ts:end_ts]
+            valid_tickers = [t for t in self.tickers if t in sliced_df.columns]
+            self.prices = sliced_df[valid_tickers]
+            
+            return self.prices
     
     def calculate_rolling_high(self, lookback_days=63):
         if self.prices is None:

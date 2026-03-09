@@ -110,36 +110,66 @@ def plot_backtest_results(results_df):
     plt.tight_layout()
     plt.show()
 
-def print_run_summary(results_df, total_trades, initial_capital):
-    """Calculates and prints key performance metrics from the equity curve."""
+def print_run_summary(results_df, 
+                      total_trades, 
+                      initial_capital, 
+                      start_date, 
+                      end_date, 
+                      bench_series=None, 
+                      bench_ticker="Benchmark"):
+    """Calculates and prints the final backtest metrics vs Benchmark."""
+    if results_df.empty:
+        print("❌ No trades executed during this period.")
+        return
+
+    # 1. Strategy Metrics
+    equity_curve = results_df['Total Equity']
+    final_equity = equity_curve.iloc[-1]
+    strat_abs_return = ((final_equity - initial_capital) / initial_capital) * 100
     
-    # 1. Total Gain %
-    final_equity = results_df['Total Equity'].iloc[-1]
-    total_gain_pct = ((final_equity - initial_capital) / initial_capital) * 100
+    start_dt = pd.to_datetime(start_date)
+    end_dt = pd.to_datetime(end_date)
+    years = (end_dt - start_dt).days / 365.25
+    strat_cagr = ((final_equity / initial_capital) ** (1 / years) - 1) * 100 if years > 0 else 0.0
+
+    # Calculate Strategy Max Drawdown
+    rolling_max_strat = equity_curve.cummax()
+    drawdown_strat = (equity_curve - rolling_max_strat) / rolling_max_strat
+    max_dd_strat = drawdown_strat.min() * 100  # Will be a negative percentage
+
+    # 2. Benchmark Metrics
+    if bench_series is not None and not bench_series.empty:
+        bench_start = bench_series.iloc[0]
+        bench_end = bench_series.iloc[-1]
+        bench_abs_return = ((bench_end - bench_start) / bench_start) * 100
+        bench_cagr = ((bench_end / bench_start) ** (1 / years) - 1) * 100 if years > 0 else 0.0
+        
+        # Calculate Benchmark Max Drawdown
+        rolling_max_bench = bench_series.cummax()
+        drawdown_bench = (bench_series - rolling_max_bench) / rolling_max_bench
+        max_dd_bench = drawdown_bench.min() * 100
+    else:
+        bench_abs_return, bench_cagr, max_dd_bench = 0.0, 0.0, 0.0
+
+    # 3. Print the Output Table
+    print("\n" + "="*60)
+    print(f"📊 BACKTEST SUMMARY: {start_date} to {end_date}")
+    print("="*60)
+    print(f"Initial Capital:   ₹{initial_capital:,.2f}")
+    print(f"Final Equity:      ₹{final_equity:,.2f}")
+    print(f"Total Trades:      {total_trades}")
+    print("-" * 60)
+    print(f"PERFORMANCE        | Strategy         | Benchmark ({bench_ticker})")
+    print("-" * 60)
+    print(f"Absolute Return    | {strat_abs_return:>8.2f}%       | {bench_abs_return:>8.2f}%")
+    print(f"CAGR               | {strat_cagr:>8.2f}%       | {bench_cagr:>8.2f}%")
+    print(f"Max Drawdown       | {max_dd_strat:>8.2f}%       | {max_dd_bench:>8.2f}%")
     
-    # 2. Max Gain % (Peak equity compared to initial capital)
-    max_equity = results_df['Total Equity'].max()
-    max_gain_pct = ((max_equity - initial_capital) / initial_capital) * 100
-    
-    # 3. Max Loss (Maximum Drawdown)
-    # Calculate the running maximum (peak) at each point in time
-    results_df['Peak_Equity'] = results_df['Total Equity'].cummax()
-    # Calculate the percentage drop from the running peak
-    results_df['Drawdown_Pct'] = ((results_df['Total Equity'] - results_df['Peak_Equity']) / results_df['Peak_Equity']) * 100
-    # The lowest point in the drawdown curve is our Max Drawdown
-    max_loss_pct = results_df['Drawdown_Pct'].min() 
-    
-    print("\n" + "="*40)
-    print("        BACKTEST RUN SUMMARY")
-    print("="*40)
-    print(f"Initial Capital   : ₹{initial_capital:,.2f}")
-    print(f"Final Equity      : ₹{final_equity:,.2f}")
-    print(f"Total Trades      : {total_trades}")
-    print("-" * 40)
-    print(f"Total Gain        : {total_gain_pct:.2f}%")
-    print(f"Max Gain (Peak)   : {max_gain_pct:.2f}%")
-    print(f"Max Loss (DD)     : {max_loss_pct:.2f}%")
-    print("="*40 + "\n")
+    # Calculate Alpha (Outperformance)
+    alpha = strat_cagr - bench_cagr
+    print("-" * 60)
+    print(f"ALPHA (CAGR Diff)  | [ {alpha:+.2f}% ]")
+    print("="*60 + "\n")
 
 
 def run_backtest():
@@ -153,6 +183,9 @@ def run_backtest():
     cap_cfg = cfg.get_capital_params()
     paths = cfg.get_paths()
     
+    bt_cfg = cfg.get_backtest_params()
+    bt_start = bt_cfg.get("start_date", "2018-01-01")
+    bt_end = bt_cfg.get("end_date", "2024-01-01")
     # Load Universe
     try:
         symbols_df = pd.read_csv(paths['symbols_file'])
@@ -162,8 +195,14 @@ def run_backtest():
         return
     
     # Initialize components
-    # universe = universe[:100]  # Limit to top 100 tickers for faster backtest runs
-    data_mgr = DataManager(universe, '2024-01-01', '2026-02-28', cache_filename=paths['cache_file'])
+    data_mgr = DataManager(
+        universe, 
+        start_date=bt_start, 
+        end_date=bt_end, 
+        cache_filename=paths['master_data_file'],
+        live_mode=False
+    )
+
     strategy = MomentumStrategy(
         portfolio_size=strat_cfg['portfolio_size'],
         entry_rank=strat_cfg['entry_rank'],
@@ -173,12 +212,12 @@ def run_backtest():
     portfolio = SimplePortfolio(allocation_per_slot=cap_cfg['allocation_per_slot'])
     
     # Prepare Data
-    prices = data_mgr.fetch_data(force_refresh=False)
-    momentum_df = data_mgr.calculate_momentum(lookback_days=63)
-    rolling_highs_df = data_mgr.calculate_rolling_high(lookback_days=63)
+    prices = data_mgr.fetch_data()
+    momentum_df = data_mgr.calculate_momentum(lookback_days=strat_cfg['momentum_lookback_days'])
+    rolling_highs_df = data_mgr.calculate_rolling_high(lookback_days=strat_cfg['momentum_lookback_days'])
 
-    bench_prices = data_mgr.fetch_benchmark('^CRSLDX')
-    bench_200_dma = data_mgr.calculate_benchmark_dma(window=200)
+    bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
+    bench_200_dma = data_mgr.calculate_benchmark_dma(window=regime_cfg['benchmark_dma_window'])
 
     # Resample to Week-End for rebalancing, dropping initial NaN rows
     monthly_momentum = momentum_df.resample('W-FRI').last().dropna(how='all')
@@ -206,14 +245,29 @@ def run_backtest():
         portfolio.update_portfolio(date, target_portfolio, current_prices)
         
        #print portfolio status at each rebalance
-        print(f"Date: {date.date()} \n Target Portfolio: {target_portfolio} \n Cash: ₹{portfolio.cash:,.2f} \n Total Equity: ₹{portfolio.equity_history[-1]['Total Equity']:,.2f}")
+       #print(f"Date: {date.date()} \n Target Portfolio: {target_portfolio} \n Cash: ₹{portfolio.cash:,.2f} \n Total Equity: ₹{portfolio.equity_history[-1]['Total Equity']:,.2f}")
 
     print(f"\nTotal Trades Executed: {portfolio.total_trades}")
     print("\n--- Backtest Complete ---")
     
     # Extract results
     results_df = portfolio.get_equity_curve()
-    print_run_summary(results_df, portfolio.total_trades, portfolio.initial_capital)  
+    total_initial_capital = cap_cfg['allocation_per_slot'] * strat_cfg['portfolio_size']
+
+    sliced_bench = None
+    if bench_prices is not None and not bench_prices.empty:
+        sliced_bench = bench_prices.loc[bt_start:bt_end].dropna()
+ 
+    print_run_summary(
+        results_df=results_df, 
+        total_trades=portfolio.total_trades, 
+        initial_capital=total_initial_capital, 
+        start_date=bt_start, 
+        end_date=bt_end,
+        bench_series=sliced_bench,                          
+        bench_ticker=regime_cfg['benchmark_ticker']         
+    )
+
     return results_df
 
 if __name__ == "__main__":

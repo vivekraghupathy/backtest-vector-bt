@@ -71,8 +71,6 @@ def generate_weekly_signals(allocation_per_slot=100000,force_refresh=False):
 
     run_date = datetime.now().strftime('%Y-%m-%d')
     print(f"--- Generating Live Signals for {run_date} ---")
-    if not force_refresh:
-        print("!!!WARNING!!! Using cached data rebalance may be inaccurate.")
     
     try:
         symbols_df = pd.read_csv(paths['symbols_file'])
@@ -89,8 +87,11 @@ def generate_weekly_signals(allocation_per_slot=100000,force_refresh=False):
     
     data_mgr = DataManager(universe, 
                            start_date.strftime('%Y-%m-%d'), 
-                           end_date.strftime('%Y-%m-%d'))
-    prices = data_mgr.fetch_data(force_refresh=force_refresh)
+                           end_date.strftime('%Y-%m-%d'),
+                           live_mode=True
+                           )
+    
+    prices = data_mgr.fetch_data()
     momentum_df = data_mgr.calculate_momentum(lookback_days=strat_cfg['momentum_lookback_days'])
     rolling_highs_df = data_mgr.calculate_rolling_high(lookback_days=strat_cfg['momentum_lookback_days'])
 
@@ -98,6 +99,7 @@ def generate_weekly_signals(allocation_per_slot=100000,force_refresh=False):
     bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
     bench_dma = data_mgr.calculate_benchmark_dma(window=regime_cfg['benchmark_dma_window'])
 
+    
     latest_momentum = momentum_df.iloc[-1]
     latest_prices = prices.iloc[-1]
     latest_highs = rolling_highs_df.iloc[-1]
@@ -185,8 +187,6 @@ def generate_weekly_signals(allocation_per_slot=100000,force_refresh=False):
          new_positions[ticker] = shares
          
     print("="*50)
-    if not force_refresh:
-        print("!!!WARNING!!! Using cached data rebalance may be inaccurate.")
     # --- CONFIRMATION & LOGGING ---
     if buys or sells:
         print("\n⚠️ WARNING: Only proceed if you have successfully placed all orders in your broker account.")
