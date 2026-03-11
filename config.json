@@ -1,6 +1,6 @@
 {
     "strategy": {
-        "momentum_lookback_days": 63,
+        "momentum_lookback_days": 60,
         "portfolio_size": 10,
         "entry_rank": 10,
         "exit_rank": 20,
@@ -8,7 +8,8 @@
     },
     "market_regime": {
         "benchmark_ticker": "^CRSLDX",
-        "benchmark_dma_window": 150
+        "benchmark_dma_window": 150,
+        "benchmark_roc_lookback": 60
     },
     "capital": {
         "allocation_per_slot": 25000,

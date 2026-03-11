@@ -97,19 +97,21 @@ def generate_weekly_signals(allocation_per_slot=100000,force_refresh=False):
 
     # Fetch Benchmark using config
     bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
-    bench_dma = data_mgr.calculate_benchmark_dma(window=regime_cfg['benchmark_dma_window'])
+    bench_roc = data_mgr.calculate_benchmark_roc(lookback_days=regime_cfg.get('benchmark_roc_lookback', 63))
 
     
     latest_momentum = momentum_df.iloc[-1]
     latest_prices = prices.iloc[-1]
     latest_highs = rolling_highs_df.iloc[-1]
 
+    #  NEW: Determine Market Regime
     latest_bench_price = bench_prices.iloc[-1]
-    latest_bench_dma = bench_dma.iloc[-1]
-    is_bull_market = latest_bench_price > latest_bench_dma
+    latest_bench_roc = bench_roc.iloc[-1]
+    is_bull_market = latest_bench_roc > 0
 
     print("\n" + "="*50)
-    print(f"MARKET REGIME: {regime_cfg['benchmark_ticker']} is at {latest_bench_price:.2f} ({regime_cfg['benchmark_dma_window']} DMA: {latest_bench_dma:.2f})")
+    print(f"MARKET REGIME: {regime_cfg['benchmark_ticker']} ROC = {latest_bench_roc:.2%} ")
+    
     if is_bull_market:
         print("🟢 BULLISH: Buying is ENABLED.")
     else:

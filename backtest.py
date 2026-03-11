@@ -216,9 +216,11 @@ def run_backtest():
     momentum_df = data_mgr.calculate_momentum(lookback_days=strat_cfg['momentum_lookback_days'])
     rolling_highs_df = data_mgr.calculate_rolling_high(lookback_days=strat_cfg['momentum_lookback_days'])
 
-    bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
-    bench_200_dma = data_mgr.calculate_benchmark_dma(window=regime_cfg['benchmark_dma_window'])
+    # bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
+    # bench_200_dma = data_mgr.calculate_benchmark_dma(window=regime_cfg['benchmark_dma_window'])
 
+    bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
+    bench_roc = data_mgr.calculate_benchmark_roc(lookback_days=regime_cfg.get('benchmark_roc_lookback', 63))
     # Resample to Week-End for rebalancing, dropping initial NaN rows
     monthly_momentum = momentum_df.resample('W-FRI').last().dropna(how='all')
     
@@ -228,9 +230,18 @@ def run_backtest():
         # Use exact match or the closest previous trading day if month-end fell on a holiday
         current_prices = prices.loc[:date].iloc[-1] 
         current_highs = rolling_highs_df.loc[:date].iloc[-1]
-        latest_bench_price = bench_prices.loc[:date].iloc[-1]
-        latest_bench_dma = bench_200_dma.loc[:date].iloc[-1]
-        is_bull_market = latest_bench_price > latest_bench_dma
+        # 🔴 NEW: Check historical ROC for this specific Friday
+        if bench_roc is not None:
+            past_roc_slice = bench_roc.loc[:date]
+            
+            if not past_roc_slice.empty and pd.notna(past_roc_slice.iloc[-1]):
+                hist_bench_roc = past_roc_slice.iloc[-1]
+                # Rule: The 63-day return must be strictly greater than 0
+                is_bull_market = hist_bench_roc > 0  
+            else:
+                is_bull_market = True 
+        else:
+            is_bull_market = True
 
         current_holdings = list(portfolio.positions.keys())  
         # 1. Strategy decides what to hold

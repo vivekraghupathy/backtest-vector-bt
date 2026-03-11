@@ -77,6 +77,14 @@ class DataManager:
             return self.benchmark_prices.rolling(window=window).mean()
         return None
     
+    def calculate_benchmark_roc(self, lookback_days=63):
+        """Calculates the Rate of Change (Absolute Momentum) for the benchmark."""
+        if hasattr(self, 'benchmark_prices') and self.benchmark_prices is not None:
+            # Calculates the fractional return over the lookback period
+            self.benchmark_roc = self.benchmark_prices.pct_change(periods=lookback_days)
+            return self.benchmark_roc
+        return None
+    
     def fetch_data(self):
         # ==========================================
         # LIVE MODE: Fetch fresh data from internet
