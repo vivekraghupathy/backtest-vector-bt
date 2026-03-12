@@ -5,16 +5,15 @@ import math
 from core import DataManager, MomentumStrategy, ConfigLoader
 
 class SimplePortfolio:
-    def __init__(self, allocation_per_slot=100000):
-        # E.g., 1 Lakh INR dedicated to each of the 10 slots
-        self.allocation_per_slot = allocation_per_slot 
-        self.positions = {}  # Format: {ticker: number_of_shares}
-        
-        # Total starting capital = 10 slots * allocation
-        self.cash = allocation_per_slot * 10 
-        self.initial_capital = self.cash
-        self.equity_history = []
+    def __init__(self, allocation_per_slot, initial_capital=1000000, liquid_yield=0.065):
+        self.allocation_per_slot = allocation_per_slot
+        self.initial_capital = initial_capital
+        self.cash = initial_capital
+        self.positions = {}          # Dictionary of {ticker: shares}
         self.total_trades = 0
+        self.equity_history = []            # To store equity curve data
+        self.liquid_yield = liquid_yield
+        self.last_date = None
 
     def update_portfolio(self, date, target_tickers, current_prices):
         """
@@ -22,6 +21,17 @@ class SimplePortfolio:
         Buys new stocks with a fixed INR allocation.
         Ignores existing stocks (lets them ride).
         """
+        #Add interest on uninvested cash for the days passed since last rebalance
+        if self.last_date is not None:
+            days_passed = (date - self.last_date).days
+            if days_passed > 0:
+                # Calculate simple interest for the days passed
+                interest = self.cash * (self.liquid_yield * (days_passed / 365.0))
+                self.cash += interest
+                print(f"📈 Added interest of ₹{interest:,.2f} for {days_passed} days. New Cash Balance: ₹{self.cash:,.2f}")
+                
+        self.last_date = date
+
         # 1. SELL PHASE: Complete liquidation of stocks no longer in target
         current_tickers = list(self.positions.keys())
         for ticker in current_tickers:
@@ -209,15 +219,19 @@ def run_backtest():
         exit_rank=strat_cfg['exit_rank'],
         drawdown_limit=strat_cfg['drawdown_limit']
     )
-    portfolio = SimplePortfolio(allocation_per_slot=cap_cfg['allocation_per_slot'])
+    total_initial_capital = cap_cfg['allocation_per_slot'] * strat_cfg['portfolio_size']
+
+    portfolio = SimplePortfolio(
+        allocation_per_slot=cap_cfg['allocation_per_slot'],
+        initial_capital=total_initial_capital,
+        liquid_yield=cap_cfg.get('liquid_etf_yield', 0.065)
+    )
     
     # Prepare Data
     prices = data_mgr.fetch_data()
     momentum_df = data_mgr.calculate_momentum(lookback_days=strat_cfg['momentum_lookback_days'])
     rolling_highs_df = data_mgr.calculate_rolling_high(lookback_days=strat_cfg['momentum_lookback_days'])
 
-    # bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
-    # bench_200_dma = data_mgr.calculate_benchmark_dma(window=regime_cfg['benchmark_dma_window'])
 
     bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
     bench_roc = data_mgr.calculate_benchmark_roc(lookback_days=regime_cfg.get('benchmark_roc_lookback', 63))

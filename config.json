@@ -14,7 +14,8 @@
     "capital": {
         "allocation_per_slot": 25000,
         "rebalance_frequency": "W-FRI",
-        "live_data_lookback_days": 350
+        "live_data_lookback_days": 350,
+        "liquid_etf_yield": 0.065
     },
     "paths": {
         "symbols_file": "REF_DATA\\symbols.csv",
@@ -29,7 +30,7 @@
         "master_history_years": 10
     },
     "backtest": {
-        "start_date": "2019-01-01",
-        "end_date": "2026-01-01"
+        "start_date": "2018-01-01",
+        "end_date": "2020-01-01"
     }
 }

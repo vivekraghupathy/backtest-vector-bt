@@ -5,11 +5,13 @@ import json
 import os
 from tqdm import tqdm
 from datetime import datetime, timedelta
+import requests_cache
 
 class ConfigLoader:
     def __init__(self, config_path='config.json'):
         self.config_path = config_path
         self.config = self._load()
+
 
     def _load(self):
         if not os.path.exists(self.config_path):
@@ -85,43 +87,84 @@ class DataManager:
             return self.benchmark_roc
         return None
     
-    def fetch_data(self):
-        # ==========================================
-        # LIVE MODE: Fetch fresh data from internet
-        # ==========================================
-        if self.live_mode:
-            print(f"📡 [LIVE MODE] Fetching real-time data from yfinance...")
-            df = yf.download(self.tickers, start=self.start_date, end=self.end_date, progress=False)
-            
-            if isinstance(df.columns, pd.MultiIndex):
-                col = 'Adj Close' if 'Adj Close' in df.columns.levels[0] else 'Close'
-                self.prices = df[col]
-            else:
-                col = 'Adj Close' if 'Adj Close' in df.columns else 'Close'
-                self.prices = df[[col]]
-                
-            self.prices = self.prices.ffill().dropna(axis=1, how='all')
-            return self.prices
-
-        # ==========================================
-        # BACKTEST MODE: Slice from local database
-        # ==========================================
-        else:
-            if not os.path.exists(self.cache_filename):
-                raise FileNotFoundError(f"Master database '{self.cache_filename}' missing. Run ETL script first.")
-                
-            print(f"🗄️ [BACKTEST MODE] Slicing data from {self.cache_filename}...")
+    def fetch_data(self, lookback_days=350):
+        """
+        Fetches pricing data using an Incremental Update (Delta Fetch) architecture.
+        Loads the master Parquet, fetches only missing dates, saves, and returns the required slice.
+        """
+        master_df = pd.DataFrame()
+        
+        # 1. Load the Master Database
+        if hasattr(self, 'cache_filename') and os.path.exists(self.cache_filename):
+            print(f"-> Loading historical master data from {self.cache_filename}...")
             master_df = pd.read_parquet(self.cache_filename)
-            master_df.index = pd.to_datetime(master_df.index)
+        
+        current_end_dt = pd.to_datetime(self.end_date)
+        
+        # 2. Determine the Delta (Missing Dates)
+        if not master_df.empty:
+            last_recorded_dt = master_df.index.max()
+            fetch_start = last_recorded_dt.strftime('%Y-%m-%d')
+        else:
+            # Fallback to a full fetch if the parquet is missing
+            fetch_start = self.start_date
+            last_recorded_dt = pd.to_datetime('1900-01-01') # Dummy old date
             
-            start_ts = pd.to_datetime(self.start_date)
-            end_ts = pd.to_datetime(self.end_date)
+        # yfinance end date is exclusive, so add 1 day to ensure we get today's close
+        fetch_end = (current_end_dt + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+
+        # 3. Fetch ONLY the Delta if we are behind
+        if master_df.empty or last_recorded_dt.date() < current_end_dt.date():
+            print(f"-> Fetching delta data from {fetch_start} to {fetch_end}...")
             
-            sliced_df = master_df.loc[start_ts:end_ts]
-            valid_tickers = [t for t in self.tickers if t in sliced_df.columns]
-            self.prices = sliced_df[valid_tickers]
+            # # Use cached session to speed up metadata/header checks
+            # session = requests_cache.CachedSession('yfinance_cache.sqlite')
+            # session.headers['User-agent'] = 'institutional-quant-engine/1.0'
             
-            return self.prices
+            delta_data = yf.download(
+                tickers=self.tickers,
+                start=fetch_start,
+                end=fetch_end,
+                threads=True,        # Utilize multithreading for the 500 tickers
+                progress=False       # Disable progress bar for clean terminal output
+            )
+            
+            if not delta_data.empty:
+                # Assuming your logic uses 'Adj Close' or 'Close'
+                # yfinance returns a MultiIndex if multiple tickers. Extract the price tier:
+                if 'Adj Close' in delta_data.columns.levels[0]:
+                    delta_df = delta_data['Adj Close']
+                else:
+                    delta_df = delta_data['Close']
+                
+                # 4. Combine and Deduplicate
+                if not master_df.empty:
+                    master_df = pd.concat([master_df, delta_df])
+                    # Drop overlapping dates, keeping the most recently downloaded version
+                    master_df = master_df[~master_df.index.duplicated(keep='last')]
+                else:
+                    master_df = delta_df
+                    
+                # 5. Save the updated master database back to disk for next week
+                if hasattr(self, 'cache_filename'):
+                    master_df.to_parquet(self.cache_filename)
+                    print(f"✅ Master database incrementally updated and saved.")
+        else:
+            print("-> Master database is already up to date. No network fetch required.")
+
+        # 6. Slice and Return the specific window requested by the script
+        if self.live_mode:
+            # For live Friday execution, we just need the trailing lookback window
+            lookback_start = current_end_dt - pd.Timedelta(days=lookback_days)
+            self.prices = master_df.loc[lookback_start:current_end_dt]
+        else:
+            # For historical backtesting, slice to the exact backtest window
+            self.prices = master_df.loc[self.start_date:self.end_date]
+            
+        # Ensure we drop any tickers that are entirely NaN in this slice
+        self.prices = self.prices.dropna(axis=1, how='all')
+        
+        return self.prices
     
     def calculate_rolling_high(self, lookback_days=63):
         if self.prices is None:
