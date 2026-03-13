@@ -99,25 +99,31 @@ def generate_weekly_signals(allocation_per_slot=100000,force_refresh=False):
     bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
     bench_roc = data_mgr.calculate_benchmark_roc(lookback_days=regime_cfg.get('benchmark_roc_lookback', 63))
 
+    weekly_bench_roc = bench_roc.resample('W-FRI').last().dropna()
     
     latest_momentum = momentum_df.iloc[-1]
     latest_prices = prices.iloc[-1]
     latest_highs = rolling_highs_df.iloc[-1]
 
-    #  NEW: Determine Market Regime
-    latest_bench_price = bench_prices.iloc[-1]
-    latest_bench_roc = bench_roc.iloc[-1]
-    is_bull_market = latest_bench_roc > 0
-
-    print("\n" + "="*50)
-    print(f"MARKET REGIME: {regime_cfg['benchmark_ticker']} ROC = {latest_bench_roc:.2%} ")
-    
-    if is_bull_market:
-        print("🟢 BULLISH: Buying is ENABLED.")
+    if len(weekly_bench_roc) >= 2:
+        curr_roc = weekly_bench_roc.iloc[-1]
+        prev_roc = weekly_bench_roc.iloc[-2]
+        is_bear_market = (curr_roc < 0) and (prev_roc < 0)
+        is_bull_market = not is_bear_market
     else:
-        print("🔴 BEARISH: Buying is HALTED. Only exits will be processed.")
-    print("="*50)
+        # Fallback if there is barely any data
+        curr_roc = bench_roc.iloc[-1]
+        prev_roc = 0.0
+        is_bull_market = curr_roc >= 0
 
+    liquidate_on_bear = regime_cfg.get('liquidate_on_bear_market', False)
+
+    # 🔴 NEW: Updated Terminal Output
+    print("\n" + "="*60)
+    print(f"MARKET REGIME: {regime_cfg['benchmark_ticker']} (63-Day ROC)")
+    print(f" -> Previous Week: {prev_roc * 100:.2f}%")
+    print(f" -> Current Week:  {curr_roc * 100:.2f}%")
+    
     strategy = MomentumStrategy(
         portfolio_size=strat_cfg['portfolio_size'],
         entry_rank=strat_cfg['entry_rank'],
@@ -126,12 +132,26 @@ def generate_weekly_signals(allocation_per_slot=100000,force_refresh=False):
         verbose=True
     )
     
-    target_portfolio = strategy.get_target_portfolio(latest_momentum,
-                                                     current_tickers, 
-                                                     latest_prices, 
-                                                     latest_highs,
-                                                     market_bullish=is_bull_market)
-    
+    if is_bull_market:
+        target_portfolio = strategy.get_target_portfolio(latest_momentum,
+                                                        current_tickers, 
+                                                        latest_prices, 
+                                                        latest_highs,
+                                                        market_bullish=is_bull_market)
+    else:
+        if liquidate_on_bear:
+            print("🔴 STATUS: BEARISH (MACRO FLUSH). 2-Week negative confirmation met.")
+            print("   Liquidating all positions to cash/Liquidcase.")
+            target_portfolio = []
+        else:
+            print("🔴 STATUS: BEARISH. 2-Week negative confirmation met.")
+            print("   Buying is HALTED. Only trailing stop exits will be processed.")
+            target_portfolio = strategy.get_target_portfolio(latest_momentum,
+                                                        current_tickers, 
+                                                        latest_prices, 
+                                                        latest_highs,
+                                                        market_bullish=is_bull_market)
+    print("="*60)
     # Trackers for the current state and ledger
     new_positions = {}
     executed_trades = []

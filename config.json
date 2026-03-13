@@ -9,7 +9,8 @@
     "market_regime": {
         "benchmark_ticker": "^CRSLDX",
         "benchmark_dma_window": 150,
-        "benchmark_roc_lookback": 60
+        "benchmark_roc_lookback": 60,
+        "liquidate_on_bear_market": true
     },
     "capital": {
         "allocation_per_slot": 25000,
@@ -30,7 +31,7 @@
         "master_history_years": 10
     },
     "backtest": {
-        "start_date": "2018-01-01",
-        "end_date": "2020-01-01"
+        "start_date": "2019-01-01",
+        "end_date": "2026-01-01"
     }
 }

@@ -28,7 +28,7 @@ class SimplePortfolio:
                 # Calculate simple interest for the days passed
                 interest = self.cash * (self.liquid_yield * (days_passed / 365.0))
                 self.cash += interest
-                print(f"📈 Added interest of ₹{interest:,.2f} for {days_passed} days. New Cash Balance: ₹{self.cash:,.2f}")
+                # print(f"📈 Added interest of ₹{interest:,.2f} for {days_passed} days. New Cash Balance: ₹{self.cash:,.2f}")
                 
         self.last_date = date
 
@@ -235,6 +235,12 @@ def run_backtest():
 
     bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
     bench_roc = data_mgr.calculate_benchmark_roc(lookback_days=regime_cfg.get('benchmark_roc_lookback', 63))
+    
+    if bench_roc is not None:
+        weekly_bench_roc = bench_roc.resample('W-FRI').last().dropna()
+    else:
+        weekly_bench_roc = None
+
     # Resample to Week-End for rebalancing, dropping initial NaN rows
     monthly_momentum = momentum_df.resample('W-FRI').last().dropna(how='all')
     
@@ -244,27 +250,38 @@ def run_backtest():
         # Use exact match or the closest previous trading day if month-end fell on a holiday
         current_prices = prices.loc[:date].iloc[-1] 
         current_highs = rolling_highs_df.loc[:date].iloc[-1]
-        # 🔴 NEW: Check historical ROC for this specific Friday
-        if bench_roc is not None:
-            past_roc_slice = bench_roc.loc[:date]
-            
-            if not past_roc_slice.empty and pd.notna(past_roc_slice.iloc[-1]):
-                hist_bench_roc = past_roc_slice.iloc[-1]
-                # Rule: The 63-day return must be strictly greater than 0
-                is_bull_market = hist_bench_roc > 0  
+
+        if weekly_bench_roc is not None:
+            past_roc_slice = weekly_bench_roc.loc[:date]
+                
+            if len(past_roc_slice) >= 2:
+                curr_roc = past_roc_slice.iloc[-1]
+                prev_roc = past_roc_slice.iloc[-2]
+                
+                # A Bear Market requires TWO consecutive weeks of negative ROC
+                is_bear_market = (curr_roc < 0) and (prev_roc < 0)
+                is_bull_market = not is_bear_market
+                
+            elif len(past_roc_slice) == 1:
+                is_bull_market = past_roc_slice.iloc[-1] >= 0
             else:
                 is_bull_market = True 
         else:
-            is_bull_market = True
+                is_bull_market = True
+
+        liquidate_on_bear = regime_cfg.get('liquidate_on_bear_market', False)
 
         current_holdings = list(portfolio.positions.keys())  
         # 1. Strategy decides what to hold
-        target_portfolio = strategy.get_target_portfolio(
-            momentum_row, 
-            current_holdings, 
-            current_prices, 
-            current_highs,
-            market_bullish=is_bull_market)
+        if not is_bull_market and liquidate_on_bear:
+            target_portfolio = []  # Force complete liquidation in bear market if configured
+        else:   
+            target_portfolio = strategy.get_target_portfolio(
+                momentum_row, 
+                current_holdings, 
+                current_prices, 
+                current_highs,
+                market_bullish=is_bull_market)
         
         # 2. Portfolio executes the trades
         portfolio.update_portfolio(date, target_portfolio, current_prices)
