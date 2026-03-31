@@ -14,23 +14,43 @@ class SimplePortfolio:
         self.equity_history = []            # To store equity curve data
         self.liquid_yield = liquid_yield
         self.last_date = None
+        self.last_gold_price = None
+        self.allocate_in_gold = True  # Set to True to enable gold allocation for parked cash
 
-    def update_portfolio(self, date, target_tickers, current_prices):
+    def update_portfolio(self, date, target_tickers, current_prices, current_gold_price=None):
         """
         Sells dropped stocks completely. 
         Buys new stocks with a fixed INR allocation.
         Ignores existing stocks (lets them ride).
+        Applies a 50/50 Liquidcase/Gold yield to parked cash.
         """
         #Add interest on uninvested cash for the days passed since last rebalance
         if self.last_date is not None:
             days_passed = (date - self.last_date).days
             if days_passed > 0:
-                # Calculate simple interest for the days passed
-                interest = self.cash * (self.liquid_yield * (days_passed / 365.0))
-                self.cash += interest
-                # print(f"📈 Added interest of ₹{interest:,.2f} for {days_passed} days. New Cash Balance: ₹{self.cash:,.2f}")
-                
+                # 1. Calculate Liquidcase Return (Fixed 6.5% annualized)
+                liquid_return = self.liquid_yield * (days_passed / 365.0)
+
+                # 2. Calculate Gold Return (Dynamic based on ETF price)
+                if self.allocate_in_gold:
+                    gold_return = 0.0
+                    if self.last_gold_price is not None and current_gold_price is not None and self.last_gold_price > 0:
+                        gold_return = (current_gold_price - self.last_gold_price) / self.last_gold_price
+                        if gold_return > 0.20 or gold_return < -0.20:
+                            print(f"⚠️ DATA GLITCH CAUGHT: Ignored impossible Gold return of {gold_return*100:.2f}% on {date.date()}")
+                            gold_return = 0.0  # Flatline the return for this corrupted week
+                    blended_return = (0.5 * liquid_return) + (0.5 * gold_return)
+                else:
+                    blended_return = liquid_return  # If not allocating to gold, use only liquid return
+
+                # Apply the blended growth to the parked cash
+                interest = self.cash * blended_return
+                self.cash += interest 
+                # print(f"📅 {date.date()} | current_gold_price: ₹{current_gold_price:,.2f} | last_gold_price: ₹{self.last_gold_price:,.2f} ")  
+                   
         self.last_date = date
+        self.last_gold_price = current_gold_price
+        
 
         # 1. SELL PHASE: Complete liquidation of stocks no longer in target
         current_tickers = list(self.positions.keys())
@@ -63,13 +83,19 @@ class SimplePortfolio:
             for t in self.positions
         )
         total_equity = self.cash + positions_value
-        
+        if self.positions:
+            # Formats like -> "RELIANCE.NS: 10, INFY.NS: 15"
+            holdings_str = ", ".join([f"{ticker}: {shares}" for ticker, shares in self.positions.items()])
+        else:
+            holdings_str = "None (Parked in Cash/Gold)"
+
         self.equity_history.append({
             'Date': date,
             'Total Equity': total_equity,
             'Cash': self.cash,
             'Invested Value': positions_value,
-            'Active Positions': len(self.positions)
+            'Active Positions': len(self.positions),
+            'Holdings': holdings_str
         })
 
     def get_equity_curve(self):
@@ -131,7 +157,6 @@ def print_run_summary(results_df,
     if results_df.empty:
         print("❌ No trades executed during this period.")
         return
-
     # 1. Strategy Metrics
     equity_curve = results_df['Total Equity']
     final_equity = equity_curve.iloc[-1]
@@ -236,6 +261,8 @@ def run_backtest():
     bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
     bench_roc = data_mgr.calculate_benchmark_roc(lookback_days=regime_cfg.get('benchmark_roc_lookback', 63))
     
+    gold_prices = data_mgr.fetch_benchmark("GOLDBEES.NS")
+
     if bench_roc is not None:
         weekly_bench_roc = bench_roc.resample('W-FRI').last().dropna()
     else:
@@ -251,9 +278,16 @@ def run_backtest():
         current_prices = prices.loc[:date].iloc[-1] 
         current_highs = rolling_highs_df.loc[:date].iloc[-1]
 
+        if gold_prices is not None and not gold_prices.empty:
+            try:
+                current_gold_price = gold_prices.loc[:date].iloc[-1]
+            except Exception:
+                current_gold_price = None
+        else:
+            current_gold_price = None
+
         if weekly_bench_roc is not None:
             past_roc_slice = weekly_bench_roc.loc[:date]
-                
             if len(past_roc_slice) >= 2:
                 curr_roc = past_roc_slice.iloc[-1]
                 prev_roc = past_roc_slice.iloc[-2]
@@ -261,7 +295,6 @@ def run_backtest():
                 # A Bear Market requires TWO consecutive weeks of negative ROC
                 is_bear_market = (curr_roc < 0) and (prev_roc < 0)
                 is_bull_market = not is_bear_market
-                
             elif len(past_roc_slice) == 1:
                 is_bull_market = past_roc_slice.iloc[-1] >= 0
             else:
@@ -282,9 +315,8 @@ def run_backtest():
                 current_prices, 
                 current_highs,
                 market_bullish=is_bull_market)
-        
         # 2. Portfolio executes the trades
-        portfolio.update_portfolio(date, target_portfolio, current_prices)
+        portfolio.update_portfolio(date, target_portfolio, current_prices, current_gold_price)
         
        #print portfolio status at each rebalance
        #print(f"Date: {date.date()} \n Target Portfolio: {target_portfolio} \n Cash: ₹{portfolio.cash:,.2f} \n Total Equity: ₹{portfolio.equity_history[-1]['Total Equity']:,.2f}")
@@ -314,4 +346,5 @@ def run_backtest():
 
 if __name__ == "__main__":
     results = run_backtest()
+    results.to_csv("backtest_results.csv")
     plot_backtest_results(results)

@@ -10,7 +10,8 @@
         "benchmark_ticker": "^CRSLDX",
         "benchmark_dma_window": 150,
         "benchmark_roc_lookback": 60,
-        "liquidate_on_bear_market": true
+        "liquidate_on_bear_market": true,
+        "gold_etf_ticker": "GOLDBEES.NS"
     },
     "capital": {
         "allocation_per_slot": 25000,
@@ -27,7 +28,7 @@
         "master_data_file": "nifty500_master_10yr.parquet"
     },
     "data_pipeline": {
-        "master_end_date": "2025-12-31",
+        "master_end_date": "2026-03-20",
         "master_history_years": 10
     },
     "backtest": {

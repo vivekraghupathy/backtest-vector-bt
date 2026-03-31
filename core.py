@@ -55,7 +55,9 @@ class DataManager:
     def fetch_benchmark(self, benchmark_ticker):
         if self.live_mode:
             print(f"📡 [LIVE MODE] Fetching real-time benchmark {benchmark_ticker}...")
-            df = yf.download(benchmark_ticker, start=self.start_date, end=self.end_date, progress=False)
+            current_end_dt = pd.to_datetime(self.end_date)
+            fetch_end = (current_end_dt + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+            df = yf.download(benchmark_ticker, start=self.start_date, end=fetch_end, progress=False)
             print(f"Latest Date for Benchmark: {df.index[-1].strftime('%Y-%m-%d')}")
             col = 'Adj Close' if ('Adj Close' in df.columns or (isinstance(df.columns, pd.MultiIndex) and 'Adj Close' in df.columns.levels[0])) else 'Close'
             self.benchmark_prices = df[col].iloc[:, 0] if isinstance(df.columns, pd.MultiIndex) else df[col]
@@ -116,11 +118,7 @@ class DataManager:
         # 3. Fetch ONLY the Delta if we are behind
         if master_df.empty or last_recorded_dt.date() < current_end_dt.date():
             print(f"-> Fetching delta data from {fetch_start} to {fetch_end}...")
-            
-            # # Use cached session to speed up metadata/header checks
-            # session = requests_cache.CachedSession('yfinance_cache.sqlite')
-            # session.headers['User-agent'] = 'institutional-quant-engine/1.0'
-            
+                     
             delta_data = yf.download(
                 tickers=self.tickers,
                 start=fetch_start,

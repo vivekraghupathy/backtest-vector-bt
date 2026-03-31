@@ -15,13 +15,13 @@ def build_10yr_master_database():
     paths = cfg.get_paths()
     regime_cfg = cfg.get_regime_params()
     data_cfg = cfg.get_data_pipeline_params()
-    end_str = data_cfg.get("master_end_date", "2026-03-09")
+    end_str = data_cfg.get("master_end_date", "2026-03-31")
     history_years = data_cfg.get("master_history_years", 10)
     
     symbols_file = paths.get('symbols_file', 'symbols.csv')
     master_file = paths.get('master_data_file', 'nifty500_master_10yr.parquet')
     benchmark_ticker = regime_cfg.get('benchmark_ticker', '^CRSLDX')
-    
+    gold_etf_ticker = regime_cfg.get('gold_etf_ticker', 'SBIGETS.NS')
 
 
     # 1. Load Universe
@@ -35,6 +35,7 @@ def build_10yr_master_database():
     # Add benchmark to the download list so we cache that too!
     if benchmark_ticker not in universe:
         universe.append(benchmark_ticker)
+        universe.append(gold_etf_ticker)
         
     print(f"-> Attempting to download 10 years of data for {len(universe)} tickers...")
     

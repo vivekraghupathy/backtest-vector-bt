@@ -141,7 +141,8 @@ def generate_weekly_signals(allocation_per_slot=100000,force_refresh=False):
     else:
         if liquidate_on_bear:
             print("🔴 STATUS: BEARISH (MACRO FLUSH). 2-Week negative confirmation met.")
-            print("   Liquidating all positions to cash/Liquidcase.")
+            print("   Liquidate all positions.")
+            print("   Allocate 50% in GOLDCASE & 50% in LIQUIDCASE")
             target_portfolio = []
         else:
             print("🔴 STATUS: BEARISH. 2-Week negative confirmation met.")
