@@ -7,11 +7,34 @@ import streamlit as st
 # Import your shared brain
 from core import DataManager, MomentumStrategy, ConfigLoader
 
-# --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Quant Command | Friday Rebalance", page_icon="⚙️", layout="wide")
+# --- PAGE CONFIGURATION & CSS COMPRESSION ---
+st.set_page_config(page_title="Quant Command", page_icon="⚙️", layout="wide")
+
+# This CSS completely hides the Streamlit header and perfectly spaces the HUD
+st.markdown("""
+    <style>
+        /* 1. Completely hide the default Streamlit banner/header */
+        [data-testid="stHeader"] {
+            display: none !important;
+        }
+        
+        /* 2. Adjust the main container to sit perfectly at the top edge */
+        .block-container {
+            padding-top: 2rem !important; /* Slightly increased to prevent edge-clipping */
+            padding-bottom: 1rem;
+            padding-left: 2rem;
+            padding-right: 2rem;
+        }
+        
+        /* 3. Make the dataframe UI tighter */
+        [data-testid="stDataFrame"] { 
+            margin-bottom: 0px; 
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
 # ==========================================
-# FILE MANAGEMENT FUNCTIONS (From Terminal Script)
+# FILE MANAGEMENT FUNCTIONS
 # ==========================================
 def load_current_positions(filepath='current_holdings.csv'):
     if not os.path.exists(filepath):
@@ -36,7 +59,6 @@ def append_to_journal(trades, filepath='trading_journal.csv'):
 # ==========================================
 # UI STATE MANAGEMENT
 # ==========================================
-# Initialize session state variables to hold data between clicks
 if 'signals_generated' not in st.session_state:
     st.session_state.signals_generated = False
 if 'proposed_sells' not in st.session_state:
@@ -54,12 +76,9 @@ if 'executed_trades' not in st.session_state:
 # CORE DASHBOARD
 # ==========================================
 def main():
-    st.title("⚙️ Institutional Momentum Engine")
-    run_date = datetime.now().strftime('%Y-%m-%d')
-    st.markdown(f"**Execution Date:** {run_date}")
-    st.divider()
-
-    # 1. LOAD CONFIGURATION
+    run_date = datetime.now().strftime('%Y-%m-%d | %H:%M')
+    
+    # 1. LOAD CONFIGURATION & STATE
     cfg = ConfigLoader('config.json')
     strat_cfg = cfg.get_strategy_params()
     regime_cfg = cfg.get_regime_params()
@@ -67,20 +86,31 @@ def main():
     paths = cfg.get_paths()
     allocation_per_slot = cap_cfg.get('allocation_per_slot', 25000)
 
-    # 2. READ LIVE STATE
     current_positions = load_current_positions(paths.get('holdings_file', 'current_holdings.csv'))
     
-    # --- ZONE 1: COMMAND & CONTROL ---
-    col_status, col_btn = st.columns([3, 1])
-    with col_status:
-        st.subheader("System State")
-        st.write(f"Currently tracking **{len(current_positions)}** active equity positions.")
+    # --- THE HUD (Heads-Up Display) ---
+    # Compresses Title, Date, Live State, and Generate Button into one horizontal block
+    col_title, col_state, col_btn = st.columns([2, 3, 1], vertical_alignment="bottom")
     
+    with col_title:
+        st.markdown(f"### Momentum Engine<br><small style='color:gray;'>{run_date}</small>", unsafe_allow_html=True)
+        
+    # with col_state:
+    #     # We read the validation ledger to populate the live HUD metrics
+    #     try:
+    #         live_df = pd.read_csv("backtest_validation_ledger.csv")
+    #         latest = live_df.iloc[-1]
+    #         m1, m2, m3 = st.columns(3)
+    #         m1.metric("Live Equity", f"₹{latest['Total Equity']:,.0f}")
+    #         m2.metric("Cash", f"₹{latest['Cash']:,.0f}")
+    #         m3.metric("Positions", int(latest['Active Positions']))
+    #     except:
+    #         st.caption("Live metrics unavailable. Run backtest to generate ledger.")
+
     with col_btn:
-        st.write("")
-        if st.button("🔥 Generate Weekly Signals", use_container_width=True, type="primary"):
-            with st.spinner("Parsing Universe & Calculating Matrices..."):
-                # Run the exact logic from your terminal script
+        if st.button("🔥 Run Analysis", use_container_width=True, type="primary"):
+            with st.spinner("Calculating..."):
+                # Backend logic execution
                 symbols_df = pd.read_csv(paths['symbols_file'])
                 universe = [f"{str(sym).strip()}.NS" for sym in symbols_df['Symbol'].tolist()]
                 
@@ -125,22 +155,14 @@ def main():
                 if is_bull_market:
                     target_portfolio = strategy.get_target_portfolio(latest_momentum, current_tickers, latest_prices, latest_highs, market_bullish=is_bull_market)
                 else:
-                    if liquidate_on_bear:
-                        target_portfolio = []
-                    else:
-                        target_portfolio = strategy.get_target_portfolio(latest_momentum, current_tickers, latest_prices, latest_highs, market_bullish=is_bull_market)
+                    target_portfolio = [] if liquidate_on_bear else strategy.get_target_portfolio(latest_momentum, current_tickers, latest_prices, latest_highs, market_bullish=is_bull_market)
 
                 # Reconcile Delta
                 sells = [t for t in current_tickers if t not in target_portfolio]
                 buys = [t for t in target_portfolio if t not in current_tickers]
                 holds = [t for t in current_tickers if t in target_portfolio]
                 
-                # Build Ledgers for UI and Saving
-                new_positions = {}
-                executed_trades = []
-                proposed_sells = []
-                proposed_buys = []
-                proposed_holds = []
+                new_positions, executed_trades, proposed_sells, proposed_buys, proposed_holds = {}, [], [], [], []
                 
                 for ticker in sells:
                     shares = current_positions[ticker]
@@ -153,7 +175,7 @@ def main():
                     if pd.notna(price) and price > 0:
                         shares = math.floor(allocation_per_slot / price)
                         cost = shares * price
-                        proposed_buys.append({"Ticker": ticker, "Action": "BUY", "Shares": shares, "Price": f"₹{price:.2f}", "Cost": f"₹{cost:,.2f}"})
+                        proposed_buys.append({"Ticker": ticker, "Action": "BUY", "Shares": shares, "Price": f"₹{price:.2f}", "Cost": f"₹{cost:,.0f}"})
                         new_positions[ticker] = shares
                         executed_trades.append({'Date': run_date, 'Action': 'BUY', 'Ticker': ticker, 'Shares': shares, 'Execution_Price': round(price, 2), 'Total_Amount': round(cost, 2)})
                         
@@ -170,55 +192,52 @@ def main():
                 st.session_state.new_positions = new_positions
                 st.session_state.executed_trades = executed_trades
 
-    st.divider()
+    st.markdown("---") # A simple, thin markdown line instead of the bulky st.divider()
 
-    # --- ZONE 2: TRADE LEDGER ---
+    # --- ZONE 2: ACTION LEDGER ---
     if st.session_state.signals_generated:
+        
+        # Micro-Banner for Regime Status
         if st.session_state.is_bull_market:
-            st.success(f"🟢 REGIME: BULLISH | Nifty 500 ROC: {st.session_state.curr_roc * 100:.2f}%")
+            st.success(f"🟢 **BULLISH** | Nifty 500 ROC: {st.session_state.curr_roc * 100:.2f}% | Deploying to Top 10", icon="✅")
         else:
-            st.error(f"🔴 REGIME: BEARISH | Nifty 500 ROC: {st.session_state.curr_roc * 100:.2f}%")
-            st.caption("2-Week negative confirmation met. Applying Bear Regime logic.")
-            if not st.session_state.is_bull_market and regime_cfg.get('liquidate_on_bear_market', False):
-                st.warning("⚠️ STATUS: MACRO FLUSH. Liquidating all equity positions. Deploying 50/50 Liquidcase & Gold.")
+            st.error(f"🔴 **BEARISH** | Nifty 500 ROC: {st.session_state.curr_roc * 100:.2f}% | 50/50 Liquidcase & Gold Barbell", icon="⚠️")
 
-        st.subheader("Action Required")
         col_s, col_b = st.columns(2)
         
         with col_s:
-            st.error(f"📉 SELLS: {len(st.session_state.proposed_sells)}")
+            st.markdown(f"**📉 Sells Required ({len(st.session_state.proposed_sells)})**")
             if st.session_state.proposed_sells:
                 st.dataframe(pd.DataFrame(st.session_state.proposed_sells), hide_index=True, use_container_width=True)
             else:
-                st.info("None")
+                st.info("No liquidations required.")
                 
         with col_b:
-            st.success(f"📈 BUYS (₹{allocation_per_slot:,.0f} / slot): {len(st.session_state.proposed_buys)}")
+            st.markdown(f"**📈 Buys Required ({len(st.session_state.proposed_buys)})**")
             if st.session_state.proposed_buys:
                 st.dataframe(pd.DataFrame(st.session_state.proposed_buys), hide_index=True, use_container_width=True)
             else:
-                st.info("None")
-                
-        st.info(f"🔵 HOLDS: {len(st.session_state.proposed_holds)} existing positions kept.")
+                st.info("No deployments required.")
 
-        st.divider()
-        
-        # --- ZONE 3: BROKER CONFIRMATION ---
+        # Hide holds in an expander to save vertical space
+        with st.expander(f"🔵 Active Holds Maintained ({len(st.session_state.proposed_holds)})"):
+            if st.session_state.proposed_holds:
+                st.dataframe(pd.DataFrame(st.session_state.proposed_holds), hide_index=True, use_container_width=True)
+            else:
+                st.write("No active holds.")
+
+        # --- ZONE 3: EXECUTION ---
         if st.session_state.proposed_buys or st.session_state.proposed_sells:
-            st.subheader("Broker Sync")
-            st.warning("⚠️ Only proceed if you have successfully placed and filled all the above orders in your Zerodha/broker account.")
-            
-            if st.button("✅ Confirm Trades Executed (Update CSVs)", type="primary"):
+            st.markdown("<br>", unsafe_allow_html=True) # Tiny bit of breathing room before the critical button
+            if st.button("✅ Confirm Trades Executed in Broker (Update Ledger)", type="primary", use_container_width=True):
                 save_new_positions(st.session_state.new_positions, paths.get('holdings_file', 'current_holdings.csv'))
                 append_to_journal(st.session_state.executed_trades, paths.get('journal_file', 'trading_journal.csv'))
                 
-                st.success("State Updated! Holdings and Trading Journal have been saved.")
+                st.success("Ledgers Updated Successfully!")
                 st.balloons()
-                
-                # Reset state so the button goes away after execution
                 st.session_state.signals_generated = False
         else:
-            st.success("✅ No trades required today. You are fully synced with the math.")
+            st.success("Portfolio is perfectly synced with the math. See you next Friday.")
 
 if __name__ == "__main__":
     main()
