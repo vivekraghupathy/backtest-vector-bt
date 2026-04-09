@@ -5,7 +5,7 @@ import json
 import os
 from tqdm import tqdm
 from datetime import datetime, timedelta
-import requests_cache
+# import requests_cache
 
 class ConfigLoader:
     def __init__(self, config_path='config.json'):
