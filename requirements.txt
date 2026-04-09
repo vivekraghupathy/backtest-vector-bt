@@ -3,6 +3,4 @@ pandas
 matplotlib
 plotly
 yfinance
-requests-cache
 tqdm
-json
