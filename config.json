@@ -20,7 +20,7 @@
         "liquid_etf_yield": 0.065
     },
     "paths": {
-        "symbols_file": "REF_DATA\\symbols.csv",
+        "symbols_file": "REF_DATA/symbols.csv",
         "holdings_file": "current_holdings.csv",
         "journal_file": "trading_journal.csv",
         "history_file": "holdings_history.csv",
