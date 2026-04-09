@@ -32,7 +32,7 @@
         "master_history_years": 10
     },
     "backtest": {
-        "start_date": "2019-01-01",
+        "start_date": "2016-01-01",
         "end_date": "2026-01-01"
     }
 }

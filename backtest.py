@@ -15,7 +15,7 @@ class SimplePortfolio:
         self.liquid_yield = liquid_yield
         self.last_date = None
         self.last_gold_price = None
-        self.allocate_in_gold = True  # Set to True to enable gold allocation for parked cash
+        self.allocate_in_gold = False  # Set to True to enable gold allocation for parked cash
 
     def update_portfolio(self, date, target_tickers, current_prices, current_gold_price=None):
         """
