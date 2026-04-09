@@ -1,9 +1,8 @@
-vectorbt
 numpy
 pandas
-scipy
-numba
 matplotlib
 plotly
 yfinance
-pytest
+requests-cache
+tqdm
+json
