@@ -22,6 +22,7 @@ def build_10yr_master_database():
     master_file = paths.get('master_data_file', 'nifty500_master_10yr.parquet')
     benchmark_ticker = regime_cfg.get('benchmark_ticker', '^CRSLDX')
     gold_etf_ticker = regime_cfg.get('gold_etf_ticker', 'SBIGETS.NS')
+    vix_ticker = regime_cfg.get('vix_ticker', '^INDIAVIX')
 
 
     # 1. Load Universe
@@ -36,6 +37,7 @@ def build_10yr_master_database():
     if benchmark_ticker not in universe:
         universe.append(benchmark_ticker)
         universe.append(gold_etf_ticker)
+        universe.append(vix_ticker)
         
     print(f"-> Attempting to download 10 years of data for {len(universe)} tickers...")
     

@@ -261,6 +261,9 @@ def run_backtest():
     bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
     bench_roc = data_mgr.calculate_benchmark_roc(lookback_days=regime_cfg.get('benchmark_roc_lookback', 63))
     
+    # Fetch the exact closing price of the India VIX
+    vix_series = data_mgr.fetch_benchmark("^INDIAVIX")
+
     gold_prices = data_mgr.fetch_benchmark("GOLDBEES.NS")
 
     if bench_roc is not None:
@@ -301,6 +304,31 @@ def run_backtest():
                 is_bull_market = True 
         else:
                 is_bull_market = True
+
+        # --- THE NEW VIX REGIME FILTER ---
+        # if vix_series is not None and not vix_series.empty:
+        #     try:
+        #         # Get the VIX closing value on this specific rebalance Friday
+        #         current_vix = vix_series.loc[:date].iloc[-1]
+                
+        #         # The Threshold Logic
+        #         if current_vix > 20.0:
+        #             # RED ZONE: Panic detected. Trigger the 50/50 Barbell.
+        #             is_bear_market = True
+        #             is_bull_market = False
+        #         else:
+        #             # GREEN/YELLOW ZONE: Keep riding momentum
+        #             is_bear_market = False
+        #             is_bull_market = True
+                    
+        #     except Exception:
+        #         # Fallback if VIX data is missing for a specific day
+        #         is_bull_market = True
+        #         is_bear_market = False
+        # else:
+        #     print(f"⚠️ VIX data unavailable. Defaulting to Bull Market assumptions for {date.date()}.")
+        #     is_bull_market = True
+        #     is_bear_market = False
 
         liquidate_on_bear = regime_cfg.get('liquidate_on_bear_market', False)
 
