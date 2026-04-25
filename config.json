@@ -4,13 +4,13 @@
         "portfolio_size": 10,
         "entry_rank": 10,
         "exit_rank": 20,
-        "drawdown_limit": 0.1
+        "drawdown_limit": 0.10
     },
     "market_regime": {
         "benchmark_ticker": "^CRSLDX",
         "benchmark_dma_window": 150,
         "benchmark_roc_lookback": 60,
-        "liquidate_on_bear_market": true,
+        "liquidate_on_bear_market": false,
         "gold_etf_ticker": "GOLDBEES.NS"
     },
     "capital": {

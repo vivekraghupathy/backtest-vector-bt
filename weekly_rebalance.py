@@ -96,34 +96,44 @@ def generate_weekly_signals(allocation_per_slot=100000,force_refresh=False):
     rolling_highs_df = data_mgr.calculate_rolling_high(lookback_days=strat_cfg['momentum_lookback_days'])
 
     # Fetch Benchmark using config
-    bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
-    bench_roc = data_mgr.calculate_benchmark_roc(lookback_days=regime_cfg.get('benchmark_roc_lookback', 63))
-
-    weekly_bench_roc = bench_roc.resample('W-FRI').last().dropna()
-    
+    # bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
+    # bench_21dma = bench_prices.rolling(window=21).mean()
+    # weekly_bench_prices = bench_prices.resample('W-FRI').last().dropna()
+    # weekly_bench_roc = weekly_bench_prices.pct_change(periods=12).dropna()
+    # bench_roc = data_mgr.calculate_benchmark_roc(lookback_days=regime_cfg.get('benchmark_roc_lookback', 63))
+    # weekly_bench_roc = bench_roc.resample('W-FRI').last().dropna()
+    # weekly_bench_prices = bench_prices.resample('W-FRI').last().dropna()
+    # weekly_bench_21dma = bench_21dma.resample('W-FRI').last().dropna()
     latest_momentum = momentum_df.iloc[-1]
     latest_prices = prices.iloc[-1]
     latest_highs = rolling_highs_df.iloc[-1]
-
-    if len(weekly_bench_roc) >= 2:
-        curr_roc = weekly_bench_roc.iloc[-1]
-        prev_roc = weekly_bench_roc.iloc[-2]
-        is_bear_market = (curr_roc < 0) and (prev_roc < 0)
-        is_bull_market = not is_bear_market
-    else:
-        # Fallback if there is barely any data
-        curr_roc = bench_roc.iloc[-1]
-        prev_roc = 0.0
-        is_bull_market = curr_roc >= 0
+    affordable_tickers = latest_prices[latest_prices <= allocation_per_slot].index
+    latest_momentum = latest_momentum.reindex(affordable_tickers).dropna()
+    is_bull_market = True  # Default assumption
+    # if weekly_bench_21dma is not None and weekly_bench_prices is not None:
+    #     try:
+    #         current_price = weekly_bench_prices.iloc[-1]
+    #         current_21dma = weekly_bench_21dma.iloc[-1]
+    
+    #         prev_price = weekly_bench_prices.iloc[-2]
+    #         prev_21dma = weekly_bench_21dma.iloc[-2]
+    #         if current_price < current_21dma and prev_price < prev_21dma:
+    #             is_bull_market = False
+    #     except Exception:
+    #         is_bull_market = True
+    # if len(weekly_bench_roc) >= 2:
+    #     curr_roc = weekly_bench_roc.iloc[-1]
+    #     prev_roc = weekly_bench_roc.iloc[-2]
+    #     is_bear_market = (curr_roc < 0) and (prev_roc < 0)
+    #     is_bull_market = not is_bear_market
+    # else:
+    #     # Fallback if there is barely any data
+    #     curr_roc = weekly_bench_roc.iloc[-1]
+    #     prev_roc = 0.0
+    #     is_bull_market = curr_roc >= 0
 
     liquidate_on_bear = regime_cfg.get('liquidate_on_bear_market', False)
 
-    # 🔴 NEW: Updated Terminal Output
-    print("\n" + "="*60)
-    print(f"MARKET REGIME: {regime_cfg['benchmark_ticker']} (63-Day ROC)")
-    print(f" -> Previous Week: {prev_roc * 100:.2f}%")
-    print(f" -> Current Week:  {curr_roc * 100:.2f}%")
-    
     strategy = MomentumStrategy(
         portfolio_size=strat_cfg['portfolio_size'],
         entry_rank=strat_cfg['entry_rank'],

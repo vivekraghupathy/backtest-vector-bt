@@ -242,7 +242,8 @@ def run_backtest():
         portfolio_size=strat_cfg['portfolio_size'],
         entry_rank=strat_cfg['entry_rank'],
         exit_rank=strat_cfg['exit_rank'],
-        drawdown_limit=strat_cfg['drawdown_limit']
+        drawdown_limit=strat_cfg['drawdown_limit'],
+        verbose=False
     )
     total_initial_capital = cap_cfg['allocation_per_slot'] * strat_cfg['portfolio_size']
 
@@ -256,20 +257,14 @@ def run_backtest():
     prices = data_mgr.fetch_data()
     momentum_df = data_mgr.calculate_momentum(lookback_days=strat_cfg['momentum_lookback_days'])
     rolling_highs_df = data_mgr.calculate_rolling_high(lookback_days=strat_cfg['momentum_lookback_days'])
-
-
-    bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
-    bench_roc = data_mgr.calculate_benchmark_roc(lookback_days=regime_cfg.get('benchmark_roc_lookback', 63))
     
-    # Fetch the exact closing price of the India VIX
-    vix_series = data_mgr.fetch_benchmark("^INDIAVIX")
+    bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
+    weekly_bench_prices = bench_prices.resample('W-FRI').last().dropna()
+    # Calculate the Daily 21-Day Moving Average
+    bench_21dma = bench_prices.rolling(window=21).mean()
+    weekly_bench_21dma = bench_21dma.resample('W-FRI').last().dropna()
 
     gold_prices = data_mgr.fetch_benchmark("GOLDBEES.NS")
-
-    if bench_roc is not None:
-        weekly_bench_roc = bench_roc.resample('W-FRI').last().dropna()
-    else:
-        weekly_bench_roc = None
 
     # Resample to Week-End for rebalancing, dropping initial NaN rows
     monthly_momentum = momentum_df.resample('W-FRI').last().dropna(how='all')
@@ -288,47 +283,17 @@ def run_backtest():
                 current_gold_price = None
         else:
             current_gold_price = None
-
-        if weekly_bench_roc is not None:
-            past_roc_slice = weekly_bench_roc.loc[:date]
-            if len(past_roc_slice) >= 2:
-                curr_roc = past_roc_slice.iloc[-1]
-                prev_roc = past_roc_slice.iloc[-2]
-                
-                # A Bear Market requires TWO consecutive weeks of negative ROC
-                is_bear_market = (curr_roc < 0) and (prev_roc < 0)
-                is_bull_market = not is_bear_market
-            elif len(past_roc_slice) == 1:
-                is_bull_market = past_roc_slice.iloc[-1] >= 0
-            else:
-                is_bull_market = True 
-        else:
-                is_bull_market = True
-
-        # --- THE NEW VIX REGIME FILTER ---
-        # if vix_series is not None and not vix_series.empty:
-        #     try:
-        #         # Get the VIX closing value on this specific rebalance Friday
-        #         current_vix = vix_series.loc[:date].iloc[-1]
-                
-        #         # The Threshold Logic
-        #         if current_vix > 20.0:
-        #             # RED ZONE: Panic detected. Trigger the 50/50 Barbell.
-        #             is_bear_market = True
-        #             is_bull_market = False
-        #         else:
-        #             # GREEN/YELLOW ZONE: Keep riding momentum
-        #             is_bear_market = False
-        #             is_bull_market = True
-                    
-        #     except Exception:
-        #         # Fallback if VIX data is missing for a specific day
-        #         is_bull_market = True
-        #         is_bear_market = False
-        # else:
-        #     print(f"⚠️ VIX data unavailable. Defaulting to Bull Market assumptions for {date.date()}.")
-        #     is_bull_market = True
-        #     is_bear_market = False
+        is_bull_market = True  # Default assumption
+        if weekly_bench_21dma is not None and weekly_bench_prices is not None:
+            try:
+                bench_price = weekly_bench_prices.loc[:date].iloc[-1]
+                bench_21dma_price = weekly_bench_21dma.loc[:date].iloc[-1]
+                prev_bench_price = weekly_bench_prices.loc[:date].iloc[-2]
+                prev_bench_21dma_price = weekly_bench_21dma.loc[:date].iloc[-2]
+                if bench_price < bench_21dma_price and prev_bench_price < prev_bench_21dma_price:
+                    is_bull_market = False
+            except Exception:
+                is_bull_market = True  # Default to bull market if we can't determine
 
         liquidate_on_bear = regime_cfg.get('liquidate_on_bear_market', False)
 

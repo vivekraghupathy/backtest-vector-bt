@@ -124,7 +124,7 @@ class DataManager:
                 start=fetch_start,
                 end=fetch_end,
                 threads=True,        # Utilize multithreading for the 500 tickers
-                progress=False       # Disable progress bar for clean terminal output
+                progress=True      # Disable progress bar for clean terminal output
             )
             
             if not delta_data.empty:

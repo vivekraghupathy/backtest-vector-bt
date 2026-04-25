@@ -123,24 +123,28 @@ def main():
                 rolling_highs_df = data_mgr.calculate_rolling_high(lookback_days=strat_cfg['momentum_lookback_days'])
                 
                 bench_prices = data_mgr.fetch_benchmark(regime_cfg['benchmark_ticker'])
-                bench_roc = data_mgr.calculate_benchmark_roc(lookback_days=regime_cfg.get('benchmark_roc_lookback', 63))
-                weekly_bench_roc = bench_roc.resample('W-FRI').last().dropna()
+                weekly_bench_prices = bench_prices.resample('W-FRI').last().dropna()
+                weekly_bench_roc = weekly_bench_prices.pct_change(periods=12).dropna()
+
+                # bench_roc = data_mgr.calculate_benchmark_roc(lookback_days=regime_cfg.get('benchmark_roc_lookback', 63))
+                # weekly_bench_roc = bench_roc.resample('W-FRI').last().dropna()
                 
                 latest_momentum = momentum_df.iloc[-1]
                 latest_prices = prices.iloc[-1]
                 latest_highs = rolling_highs_df.iloc[-1]
-                
-                if len(weekly_bench_roc) >= 2:
-                    curr_roc = weekly_bench_roc.iloc[-1]
-                    prev_roc = weekly_bench_roc.iloc[-2]
-                    is_bear_market = (curr_roc < 0) and (prev_roc < 0)
-                    is_bull_market = not is_bear_market
-                else:
-                    curr_roc = bench_roc.iloc[-1]
-                    prev_roc = 0.0
-                    is_bull_market = curr_roc >= 0
+                affordable_tickers = latest_prices[latest_prices <= allocation_per_slot].index
+                latest_momentum = latest_momentum.reindex(affordable_tickers).dropna()
+                is_bull_market = True
+                # if len(weekly_bench_roc) >= 2:
+                #     curr_roc = weekly_bench_roc.iloc[-1]
+                #     prev_roc = weekly_bench_roc.iloc[-2]
+                #     is_bear_market = (curr_roc < 0) and (prev_roc < 0)
+                #     is_bull_market = not is_bear_market
+                # else:
+                #     curr_roc = weekly_bench_roc.iloc[-1]
+                #     prev_roc = 0.0
+                #     is_bull_market = curr_roc >= 0
 
-                st.session_state.curr_roc = curr_roc
                 st.session_state.is_bull_market = is_bull_market
 
                 # Target Generation
