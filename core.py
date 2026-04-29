@@ -5,6 +5,7 @@ import json
 import os
 from tqdm import tqdm
 from datetime import datetime, timedelta
+import time
 # import requests_cache
 
 class ConfigLoader:
@@ -71,9 +72,12 @@ class DataManager:
             sliced_df = master_df.loc[pd.to_datetime(self.start_date):pd.to_datetime(self.end_date)]
             
             if benchmark_ticker in sliced_df.columns:
+                print(f"Data found for Benchmark:{benchmark_ticker}")
                 self.benchmark_prices = sliced_df[benchmark_ticker]
                 return self.benchmark_prices
-            return None
+            else:
+                print(f"Data Not found for Benchmark:{benchmark_ticker}")
+                return None
 
     def calculate_benchmark_dma(self, window=200):
         """Calculates the Moving Average for the benchmark."""
@@ -113,27 +117,75 @@ class DataManager:
             last_recorded_dt = pd.to_datetime('1900-01-01') # Dummy old date
             
         # yfinance end date is exclusive, so add 1 day to ensure we get today's close
-        fetch_end = (current_end_dt + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+        # fetch_end = (current_end_dt + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+        fetch_end = current_end_dt
 
         # 3. Fetch ONLY the Delta if we are behind
         if master_df.empty or last_recorded_dt.date() < current_end_dt.date():
             print(f"-> Fetching delta data from {fetch_start} to {fetch_end}...")
-                     
-            delta_data = yf.download(
-                tickers=self.tickers,
-                start=fetch_start,
-                end=fetch_end,
-                threads=True,        # Utilize multithreading for the 500 tickers
-                progress=True      # Disable progress bar for clean terminal output
-            )
             
-            if not delta_data.empty:
-                # Assuming your logic uses 'Adj Close' or 'Close'
-                # yfinance returns a MultiIndex if multiple tickers. Extract the price tier:
-                if 'Adj Close' in delta_data.columns.levels[0]:
-                    delta_df = delta_data['Adj Close']
-                else:
-                    delta_df = delta_data['Close']
+            valid_data = []
+            failed_tickers = []
+            
+            # ==========================================
+            # INCREMENTAL FETCH PIPELINE
+            # ==========================================
+            for ticker in tqdm(self.tickers, desc="Downloading Delta", unit="ticker"):
+                try:
+                    # Download individually with auto_adjust=True
+                    temp_df = yf.download(ticker, 
+                                          start=fetch_start, 
+                                          end=fetch_end, 
+                                          progress=False, 
+                                          auto_adjust=True)
+                    
+                    if temp_df.empty:
+                        failed_tickers.append(ticker)
+                        continue
+                        
+                    # Safely extract the 'Close' column
+                    if isinstance(temp_df.columns, pd.MultiIndex):
+                        close_series = temp_df['Close'].iloc[:, 0].rename(ticker)
+                    else:
+                        close_series = temp_df['Close'].rename(ticker)
+                        
+                    valid_data.append(close_series)
+                    
+                except Exception as e:
+                    failed_tickers.append(ticker)
+            # ==========================================
+            # Add a retry for failed tickers
+            if failed_tickers:
+                print(f"\n-> Cooling down API... then attempting to recover {len(failed_tickers)} failed tickers.")
+                time.sleep(3)
+                still_failed = []
+                for ticker in tqdm(failed_tickers, desc="Retrying Casualties", unit="ticker"):
+                    try:
+                        time.sleep(1)
+                        temp_df = yf.download(ticker, 
+                                              start=fetch_start, 
+                                              end=fetch_end, 
+                                              progress=False, 
+                                              auto_adjust=True)
+                        if temp_df.empty:
+                            still_failed.append(ticker)
+                            continue
+                        # Safely extract the 'Close' column
+                        if isinstance(temp_df.columns, pd.MultiIndex):
+                            close_series = temp_df['Close'].iloc[:, 0].rename(ticker)
+                        else:
+                            close_series = temp_df['Close'].rename(ticker)
+                        
+                        valid_data.append(close_series)
+                    except Exception as e:
+                        # If it fails a second time, it is likely a truly dead ticker or delisted stock
+                        still_failed.append(ticker)
+                failed_tickers = still_failed
+                    
+            if valid_data:
+                # Combine all valid series into a single delta dataframe
+                delta_df = pd.concat(valid_data, axis=1)
+                delta_df.index = pd.to_datetime(delta_df.index)
                 
                 # 4. Combine and Deduplicate
                 if not master_df.empty:
@@ -146,7 +198,14 @@ class DataManager:
                 # 5. Save the updated master database back to disk for next week
                 if hasattr(self, 'cache_filename'):
                     master_df.to_parquet(self.cache_filename)
-                    print(f"✅ Master database incrementally updated and saved.")
+                    print(f"\n✅ Master database incrementally updated and saved.")
+            else:
+                print("\n❌ CRITICAL ERROR: No delta data was downloaded at all.")
+                
+            if failed_tickers:
+                print(f"⚠️ WARNING: Dropped {len(failed_tickers)} broken tickers during delta fetch.")
+                print(f"Failed Tickers:{failed_tickers}")
+                
         else:
             print("-> Master database is already up to date. No network fetch required.")
 

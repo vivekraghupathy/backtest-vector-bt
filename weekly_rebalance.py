@@ -84,6 +84,7 @@ def generate_weekly_signals(allocation_per_slot=100000,force_refresh=False):
     
     end_date = datetime.now()
     start_date = end_date - timedelta(days=cap_cfg['live_data_lookback_days'])
+    end_date = end_date - timedelta(days=1)
     
     data_mgr = DataManager(universe, 
                            start_date.strftime('%Y-%m-%d'), 
@@ -92,6 +93,9 @@ def generate_weekly_signals(allocation_per_slot=100000,force_refresh=False):
                            )
     
     prices = data_mgr.fetch_data()
+    prices = prices.ffill()
+    prices = prices.dropna(how='all')
+    print(prices.tail())
     momentum_df = data_mgr.calculate_momentum(lookback_days=strat_cfg['momentum_lookback_days'])
     rolling_highs_df = data_mgr.calculate_rolling_high(lookback_days=strat_cfg['momentum_lookback_days'])
 
