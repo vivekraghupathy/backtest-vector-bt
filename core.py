@@ -23,6 +23,9 @@ class ConfigLoader:
     def get_strategy_params(self):
         return self.config.get("strategy", {})
         
+    def get_barbell_strategy_params(self):
+        return self.config.get("barbell_strategy", {})
+        
     def get_regime_params(self):
         return self.config.get("market_regime", {})
         
@@ -260,35 +263,33 @@ class MomentumStrategy:
         highs_aligned = current_highs.reindex(valid_scores.index)
         
         # 2. PRE-FILTER: Create a mask for stocks that are strictly ABOVE the drawdown limit
-        # This mathematically strips out the "beaten down" stocks before ranking
         drawdown_mask = prices_aligned > (highs_aligned * (1 - self.drawdown_limit))
-        
-        # Apply the mask to get only qualified, high-standing stocks
         qualified_scores = valid_scores[drawdown_mask]
-        
-        if self.verbose:
-            print("\nMomentum Scores top 20:")
-            print(qualified_scores.sort_values(ascending=False)[:20])
-        
+               
         # 3. RANKING: Rank only the qualified stocks
         ranked_tickers = qualified_scores.sort_values(ascending=False).index.tolist()
         
-        top_20_pool = set(ranked_tickers[:self.exit_rank])
-        top_10_pool = ranked_tickers[:self.entry_rank]
+        top_exit_pool = set(ranked_tickers[:self.exit_rank])
+        top_entry_pool = ranked_tickers[:self.entry_rank]
+
+        if self.verbose:
+            print(f"\nMomentum Scores top {self.exit_rank}:")
+            print(qualified_scores.sort_values(ascending=False)[:self.exit_rank])
         
         target_portfolio = []
         
-        # 4. EXIT RULE: (Always runs) Keep if in Top 20. 
+        # 4. EXIT RULE: Keep if in Top Pool. 
         for ticker in current_holdings:
-            if ticker in top_20_pool:
+            if ticker in top_exit_pool:
                 target_portfolio.append(ticker)
         
-        # 5. ENTRY RULE: (Only runs if market is > 200 DMA)
+        # 5. ENTRY RULE: (Only runs if market is bullish)
         if market_bullish:
-            for ticker in top_10_pool:
+            for ticker in top_entry_pool:
                 if len(target_portfolio) >= self.portfolio_size:
                     break
-                    
+                
+                # Check if already in portfolio
                 if ticker not in target_portfolio:
                     target_portfolio.append(ticker)
                     

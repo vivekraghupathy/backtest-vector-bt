@@ -3,14 +3,32 @@
         "momentum_lookback_days": 60,
         "portfolio_size": 10,
         "entry_rank": 10,
-        "exit_rank": 20,
-        "drawdown_limit": 0.10
+        "exit_rank": 50,
+        "drawdown_limit": 0.10,
+        "skip_latest_period": false
+    },
+    "barbell_strategy": {
+        "safe_weight_bull": 0.30,
+        "safe_weight_bear": 0.80,
+        "gold_ratio_in_safe": 0.50,
+        "gold_trend_filter": true,
+        "gold_trend_lookback_days": 50,
+        "risk_portfolio_size": 5,
+        "entry_rank": 5,
+        "exit_rank": 25,
+        "drawdown_limit": 0.10,
+        "momentum_lookback_days": 60,
+        "skip_latest_period": false
     },
     "market_regime": {
         "benchmark_ticker": "^CRSLDX",
-        "benchmark_dma_window": 150,
+        "benchmark_dma_window": 200,
         "benchmark_roc_lookback": 60,
+        "regime_filter": "none",
         "liquidate_on_bear_market": false,
+        "use_adx_filter": false,
+        "adx_threshold": 20,
+        "adx_window": 14,
         "gold_etf_ticker": "GOLDBEES.NS"
     },
     "capital": {
@@ -24,6 +42,9 @@
         "holdings_file": "current_holdings.csv",
         "journal_file": "trading_journal.csv",
         "history_file": "holdings_history.csv",
+        "barbell_holdings_file": "barbell_holdings.csv",
+        "barbell_journal_file": "barbell_trading_journal.csv",
+        "barbell_history_file": "barbell_holdings_history.csv",
         "cache_file": "historical_prices.parquet",
         "master_data_file": "nifty500_master_10yr.parquet"
     },

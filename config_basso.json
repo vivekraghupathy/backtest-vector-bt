@@ -1,0 +1,33 @@
+{
+    "strategy": {
+        "benchmark_ticker": "^NSEI",
+        "regime_sma_window": 200,
+        "turnover_window": 20,
+        "turnover_threshold": 150000000,
+        "atr_window": 20,
+        "risk_pct_bull": 0.01,
+        "risk_pct_bear": 0.0,
+        "cash_yield": 0.06,
+        "entry_sma_window": 30,
+        "exit_sma_window": 21,
+        "candidate_ranking_method": "turnover",
+        "use_regime_filter": true,
+        "relative_strength_lookback": 60,
+        "relative_strength_min_return": 0.0,
+        "use_keltner_channel": true,
+        "keltner_ema_window": 20,
+        "keltner_multiplier": 2.0
+    },
+    "paths": {
+        "symbols_file": "REF_DATA/symbols.csv",
+        "cache_file": "nifty500_ohlcv_10yr.parquet",
+        "results_file": "basso_backtest_results.csv",
+        "journal_file": "basso_backtest_trade_journal.csv",
+        "summary_file": "basso_backtest_summary.md"
+    },
+    "backtest": {
+        "start_date": "2024-03-31",
+        "end_date": "2026-03-31",
+        "initial_capital": 10000000
+    }
+}
